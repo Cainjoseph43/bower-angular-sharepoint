@@ -18,3 +18,7 @@ Add a `<script>` to your `index.html` after including `angular.js`:
 ```html
 <script src="/bower_components/angular-sharepoint/angular-sharepoint.js"></script>
 ```
+
+## Documentation
+
+Document is available [here](http://expertsinside.github.io/angular-sharepoint)
