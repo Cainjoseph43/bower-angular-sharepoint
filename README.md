@@ -21,4 +21,4 @@ Add a `<script>` to your `index.html` after including `angular.js`:
 
 ## Documentation
 
-Document is available [here](http://expertsinside.github.io/angular-sharepoint)
+Document is available [here](http://expertsinside.github.io/angular-sharepoint).
