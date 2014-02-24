@@ -1,3 +1,4 @@
+'use strict';
 /**
  * @ngdoc overview
  * @name ExpertsInside.SharePoint
@@ -5,11 +6,16 @@
  * @description
  * The main module which holds everything together.
  */
-angular.module('ExpertsInside.SharePoint', ['ng']);
+angular.module('ExpertsInside.SharePoint', ['ng']).run(function () {
+  var sharepointMinErr = angular.$$minErr('sharepoint');
+  if (angular.isUndefined(ShareCoffee)) {
+    throw sharepointMinErr('noShareCoffee', 'angular-sharepoint depends on ShareCoffee to do its job.' + 'Either include the bundled ShareCoffee + angular-sharepoint file ' + 'or include ShareCoffe seperately before angular-sharepoint.');
+  }
+});
 /**
  * @ngdoc service
  * @name ExpertsInside.SharePoint.$spList
- * @requires $spPageContextInfo
+ * @requires $spRest
  *
  * @description
  * A factory which creates a list object that lets you interact with SharePoint Lists via the
@@ -21,22 +27,11 @@ angular.module('ExpertsInside.SharePoint', ['ng']);
  * @return {Object} A list "class" object with the default set of resource actions
  */
 angular.module('ExpertsInside.SharePoint').factory('$spList', [
-  '$spPageContextInfo',
-  '$spRequestDigest',
+  '$spRest',
   '$http',
-  '$log',
-  function ($spPageContextInfo, $spRequestDigest, $http, $log) {
+  function ($spRest, $http) {
     'use strict';
     var $spListMinErr = angular.$$minErr('$spList');
-    var validParamKeys = [
-        '$select',
-        '$filter',
-        '$orderby',
-        '$top',
-        '$skip',
-        '$expand',
-        '$sort'
-      ];
     function List(name, defaults) {
       if (!name) {
         throw $spListMinErr('badargs', 'name cannot be blank.');
@@ -44,83 +39,43 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
       this.name = name.toString();
       var upcaseName = this.name.charAt(0).toUpperCase() + this.name.slice(1);
       this.defaults = angular.extend({ itemType: 'SP.Data.' + upcaseName + 'ListItem' }, defaults);
+      this.queries = {};
     }
     List.prototype = {
       $baseUrl: function () {
-        return $spPageContextInfo.webServerRelativeUrl + '/_api/web/lists/getByTitle(\'' + this.name + '\')';
+        return 'web/lists/getByTitle(\'' + this.name + '\')';
       },
       $buildHttpConfig: function (action, params, args) {
-        var baseUrl = this.$baseUrl();
-        var httpConfig = {
-            url: baseUrl,
-            params: params,
-            headers: { accept: 'application/json;odata=verbose' },
-            transformResponse: function (data) {
-              var response = JSON.parse(data);
-              if (angular.isDefined(response.d)) {
-                response = response.d;
-              }
-              if (angular.isDefined(response.results)) {
-                response = response.results;
-              }
-              return response;
-            }
-          };
+        var baseUrl = this.$baseUrl(), httpConfig;
         switch (action) {
         case 'get':
-          httpConfig.url = baseUrl + '/items(' + args + ')';
-          httpConfig.method = 'GET';
+          httpConfig = ShareCoffee.REST.build.read.for.angularJS({ url: baseUrl + '/items(' + args + ')' });
           break;
         case 'query':
-          httpConfig.url = baseUrl + '/items';
-          httpConfig.method = 'GET';
+          httpConfig = ShareCoffee.REST.build.read.for.angularJS({ url: baseUrl + '/items' });
           break;
         case 'create':
-          httpConfig.url = baseUrl + '/items';
-          httpConfig.method = 'POST';
-          angular.extend(httpConfig.headers, {
-            'X-RequestDigest': $spRequestDigest(),
-            'content-type': 'application/json;odata=verbose'
+          httpConfig = ShareCoffee.REST.build.create.for.angularJS({
+            url: baseUrl + '/items',
+            payload: angular.toJson(args)
           });
           break;
         case 'save':
-          httpConfig.url = args.__metdata.uri;
-          httpConfig.method = 'POST';
-          angular.extend(httpConfig.headers, {
-            'X-HTTP-Method': 'MERGE',
-            'X-RequestDigest': $spRequestDigest(),
-            'IF-MATCH': args.__metadata.etag || '*',
-            'content-type': 'application/json;odata=verbose'
+          httpConfig = ShareCoffee.REST.build.update.for.angularJS({
+            url: baseUrl,
+            payload: angular.toJson(args)
           });
+          httpConfig.url = args.__metadata.uri;
+          // ShareCoffe doesnt work with absolute urls atm
+          break;
+        case 'delete':
+          httpConfig = ShareCoffee.REST.build.delete.for.angularJS({ url: baseUrl });
+          httpConfig.url = args.__metadata.uri;
           break;
         }
+        httpConfig.url = $spRest.appendQueryString(httpConfig.url, params);
+        httpConfig.transformResponse = $spRest.transformResponse;
         return httpConfig;
-      },
-      $normalizeParams: function (params) {
-        params = angular.extend({}, params);
-        //make a copy
-        if (angular.isDefined(params)) {
-          angular.forEach(params, function (value, key) {
-            if (key.indexOf('$') !== 0) {
-              delete params[key];
-              key = '$' + key;
-              params[key] = value;
-            }
-            if (angular.isArray(value)) {
-              params[key] = value.join(',');
-            }
-            if (validParamKeys.indexOf(key) === -1) {
-              $log.warn('Invalid param key: ' + key);
-              delete params[key];
-            }
-          });
-        }
-        // cannot use angular.equals(params, {}) to check for empty object,
-        // because angular.equals ignores properties prefixed with $
-        if (params === null || JSON.stringify(params) === '{}') {
-          params = undefined;
-        }
-        return params;
       },
       $createResult: function (emptyObject, httpConfig) {
         var result = emptyObject;
@@ -134,12 +89,10 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         if (angular.isUndefined(id)) {
           throw $spListMinErr('badargs', 'id is required.');
         }
-        params = this.$normalizeParams(params);
         var httpConfig = this.$buildHttpConfig('get', params, id);
         return this.$createResult({ Id: id }, httpConfig);
       },
       query: function (params) {
-        params = this.$normalizeParams(params);
         var httpConfig = this.$buildHttpConfig('query', params);
         return this.$createResult([], httpConfig);
       },
@@ -155,10 +108,25 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
       },
       save: function (item) {
         if (angular.isUndefined(item.__metadata)) {
-          throw 'o';
+          throw $spListMinErr('badargs', 'Item must have __metadata property.');
         }
         var httpConfig = this.$buildHttpConfig('save', undefined, item);
-        return this.$createResult([], httpConfig);
+        return this.$createResult(item, httpConfig);
+      },
+      delete: function (item) {
+        if (angular.isUndefined(item.__metadata)) {
+          throw $spListMinErr('badargs', 'Item must have __metadata property.');
+        }
+        var httpConfig = this.$buildHttpConfig('delete', undefined, item);
+        return this.$createResult(item, httpConfig);
+      },
+      addNamedQuery: function (name, createParams) {
+        var me = this;
+        this.queries[name] = function () {
+          var params = createParams.apply(me, arguments);
+          return me.query(params);
+        };
+        return me;
       }
     };
     function listFactory(name, defaults) {
@@ -193,27 +161,96 @@ angular.module('ExpertsInside.SharePoint').factory('$spPageContextInfo', [
     return $spPageContextInfo;
   }
 ]);
-/**
- * @ngdoc Service
- * @name ExpertsInside.SharePoint.$spRequestDigest
- * @requires $window
- *
- * @description
- * Reads the request digest from the current page
- *
- * @return {String} request digest
- */
-angular.module('ExpertsInside.SharePoint').factory('$spRequestDigest', [
-  '$window',
-  function ($window) {
+angular.module('ExpertsInside.SharePoint').factory('$spRest', [
+  '$log',
+  function ($log) {
     'use strict';
-    var $spRequestDigestMinErr = angular.$$minErr('$spRequestDigest');
-    return function () {
-      var requestDigest = $window.document.getElementById('__REQUESTDIGEST');
-      if (angular.isUndefined(requestDigest)) {
-        throw $spRequestDigestMinErr('notfound', 'Cannot read request digest from DOM.');
+    var validParamKeys = [
+        '$select',
+        '$filter',
+        '$orderby',
+        '$top',
+        '$skip',
+        '$expand',
+        '$sort'
+      ];
+    function getKeysSorted(obj) {
+      var keys = [];
+      if (angular.isUndefined(obj) || obj === null) {
+        return keys;
       }
-      return requestDigest.value;
-    };
+      for (var key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          keys.push(key);
+        }
+      }
+      return keys.sort();
+    }
+    var $spRest = {
+        transformResponse: function (json) {
+          var response = {};
+          if (angular.isDefined(json) && json !== null && json !== '') {
+            response = angular.fromJson(json);
+          }
+          if (angular.isObject(response) && angular.isDefined(response.d)) {
+            response = response.d;
+          }
+          if (angular.isObject(response) && angular.isDefined(response.results)) {
+            response = response.results;
+          }
+          return response;
+        },
+        buildQueryString: function (params) {
+          var parts = [];
+          var keys = getKeysSorted(params);
+          angular.forEach(keys, function (key) {
+            var value = params[key];
+            if (value === null || angular.isUndefined(value)) {
+              return;
+            }
+            if (angular.isArray(value)) {
+              value = value.join(',');
+            }
+            if (angular.isObject(value)) {
+              value = angular.toJson(value);
+            }
+            parts.push(key + '=' + value);
+          });
+          var queryString = parts.join('&');
+          return queryString;
+        },
+        normalizeParams: function (params) {
+          params = angular.extend({}, params);
+          //make a copy
+          if (angular.isDefined(params)) {
+            angular.forEach(params, function (value, key) {
+              if (key.indexOf('$') !== 0) {
+                delete params[key];
+                key = '$' + key;
+                params[key] = value;
+              }
+              if (validParamKeys.indexOf(key) === -1) {
+                $log.warn('Invalid param key: ' + key);
+                delete params[key];
+              }
+            });
+          }
+          // cannot use angular.equals(params, {}) to check for empty object,
+          // because angular.equals ignores properties prefixed with $
+          if (params === null || JSON.stringify(params) === '{}') {
+            params = undefined;
+          }
+          return params;
+        },
+        appendQueryString: function (url, params) {
+          params = $spRest.normalizeParams(params);
+          var queryString = $spRest.buildQueryString(params);
+          if (queryString !== '') {
+            url += (url.indexOf('?') === -1 ? '?' : '&') + queryString;
+          }
+          return url;
+        }
+      };
+    return $spRest;
   }
 ]);
