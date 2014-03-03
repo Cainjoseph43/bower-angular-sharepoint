@@ -44,6 +44,9 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         angular.extend(this, data);
       }
       ListItem.$$listName = name;
+      ListItem.getListName = function () {
+        return ListItem.$$listName;
+      };
       ListItem.$$listRelativeUrl = 'web/lists/getByTitle(\'' + name + '\')';
       ListItem.$decorateResult = function (result, httpConfig) {
         if (!angular.isArray(result) && !(result instanceof ListItem)) {
@@ -115,7 +118,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         if (!(angular.isObject(item) && item instanceof ListItem)) {
           throw $spListMinErr('badargs', 'item must be a ListItem instance.');
         }
-        options = angular.extend({}, { query: item.$settings.queryDefaults }, options, { item: item });
+        options = angular.extend({}, options, { item: item });
         var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'update', options);
         return ListItem.$decorateResult(item, httpConfig);
       };
@@ -212,6 +215,14 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
   function ($log) {
     'use strict';
     var $spRestMinErr = angular.$$minErr('$spRest');
+    var unique = function (arr) {
+      return arr.reduce(function (r, x) {
+        if (r.indexOf(x) < 0) {
+          r.push(x);
+        }
+        return r;
+      }, []);
+    };
     var validParamKeys = [
         '$select',
         '$filter',
@@ -256,7 +267,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
               return;
             }
             if (angular.isArray(value)) {
-              value = value.join(',');
+              value = unique(value).join(',');
             }
             if (angular.isObject(value)) {
               value = angular.toJson(value);
@@ -290,7 +301,6 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
           return params;
         },
         appendQueryString: function (url, params) {
-          params = $spRest.normalizeParams(params);
           var queryString = $spRest.buildQueryString(params);
           if (queryString !== '') {
             url += (url.indexOf('?') === -1 ? '?' : '&') + queryString;
@@ -311,6 +321,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
           var httpConfig = { url: baseUrl };
           action = angular.isString(action) ? action.toLowerCase() : '';
           options = angular.isDefined(options) ? options : {};
+          var query = angular.isDefined(options.query) ? $spRest.normalizeParams(options.query) : {};
           switch (action) {
           case 'get':
             if (angular.isUndefined(options.id)) {
@@ -325,6 +336,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             if (angular.isUndefined(options.item)) {
               throw $spRestMinErr('options:create', 'options must have an item');
             }
+            delete query.$expand;
             httpConfig = ShareCoffee.REST.build.create.for.angularJS({
               url: baseUrl,
               payload: $spRest.createPayload(options.item)
@@ -337,6 +349,8 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             if (angular.isUndefined(options.item.__metadata)) {
               throw $spRestMinErr('options:update', 'options.item must have __metadata');
             }
+            query = {};
+            // does nothing or breaks things, so we ignore it
             var eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
             httpConfig = ShareCoffee.REST.build.update.for.angularJS({
               url: baseUrl,
@@ -358,7 +372,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             // ShareCoffe doesnt work with absolute urls atm
             break;
           }
-          httpConfig.url = $spRest.appendQueryString(httpConfig.url, options.query);
+          httpConfig.url = $spRest.appendQueryString(httpConfig.url, query);
           httpConfig.transformResponse = $spRest.transformResponse;
           return httpConfig;
         }
