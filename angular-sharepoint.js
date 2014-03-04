@@ -178,6 +178,9 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         },
         $delete: function () {
           return ListItem.delete(this).$promise;
+        },
+        $isNew: function () {
+          return angular.isUndefined(this.__metadata) || angular.isUndefined(this.__metadata.id);
         }
       };
       return ListItem;
