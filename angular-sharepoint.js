@@ -12,6 +12,97 @@ angular.module('ExpertsInside.SharePoint', ['ng']).run(function () {
     throw sharepointMinErr('noShareCoffee', 'angular-sharepoint depends on ShareCoffee to do its job.' + 'Either include the bundled ShareCoffee + angular-sharepoint file ' + 'or include ShareCoffe seperately before angular-sharepoint.');
   }
 });
+angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
+  'use strict';
+  var assertType = function (type, obj) {
+    if (!angular.isObject(obj.__metadata) || obj.__metadata.type !== type) {
+      throw $spConvertMinErr('badargs', 'expected argument to be of type {0}.', type);
+    }
+  };
+  var $spConvertMinErr = angular.$$minErr('$spConvert');
+  var $spConvert = {
+      spKeyValue: function (keyValue) {
+        assertType('SP.KeyValue', keyValue);
+        var value = keyValue.Value;
+        switch (keyValue.ValueType) {
+        case 'Edm.Double':
+        case 'Edm.Float':
+          return parseFloat(value);
+        case 'Edm.Int16':
+        case 'Edm.Int32':
+        case 'Edm.Int64':
+        case 'Edm.Byte':
+          return parseInt(value, 10);
+        case 'Edm.Boolean':
+          return value === 'true';
+        default:
+          return value;
+        }
+      },
+      spKeyValueArray: function (keyValues) {
+        var result = {};
+        for (var i = 0, l = keyValues.length; i < l; i += 1) {
+          var keyValue = keyValues[i];
+          var key = keyValue.Key.charAt(0).toLowerCase() + keyValue.Key.slice(1);
+          result[key] = $spConvert.spKeyValue(keyValue);
+        }
+        return result;
+      },
+      spSimpleDataRow: function (row) {
+        assertType('SP.SimpleDataRow', row);
+        var cells = row.Cells.results || [];
+        return $spConvert.spKeyValueArray(cells);
+      },
+      spSimpleDataTable: function (table) {
+        assertType('SP.SimpleDataTable', table);
+        var result = [];
+        var rows = table.Rows.results || [];
+        for (var i = 0, l = rows.length; i < l; i += 1) {
+          var row = rows[i];
+          result.push($spConvert.spSimpleDataRow(row));
+        }
+        return result;
+      },
+      searchResult: function (searchResult) {
+        assertType('Microsoft.Office.Server.Search.REST.SearchResult', searchResult);
+        var primaryQueryResult = searchResult.PrimaryQueryResult;
+        var result = {
+            elapsedTime: searchResult.ElapsedTime,
+            spellingSuggestion: searchResult.SpellingSuggestion,
+            properties: $spConvert.spKeyValueArray(searchResult.Properties.results),
+            primaryQueryResult: {
+              queryId: primaryQueryResult.QueryId,
+              queryRuleId: primaryQueryResult.QueryRuleId,
+              relevantResults: $spConvert.spSimpleDataTable(primaryQueryResult.RelevantResults.Table),
+              customResults: primaryQueryResult.CustomResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.CustomResults.Table) : null,
+              refinementResults: primaryQueryResult.RefinementResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.RefinementResults.Table) : null,
+              specialTermResults: primaryQueryResult.SpecialTermResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.SpecialTermResults.Table) : null
+            }
+          };
+        return result;
+      },
+      suggestResult: function (suggestResult) {
+        // TODO implement
+        return suggestResult;
+      },
+      userResult: function (userResult) {
+        assertType('SP.UserProfiles.PersonProperties', userResult);
+        var result = {
+            accountName: userResult.AccountName,
+            displayName: userResult.DisplayName,
+            email: userResult.Email,
+            isFollowed: userResult.IsFollowed,
+            personalUrl: userResult.PersonalUrl,
+            pictureUrl: userResult.PictureUrl,
+            profileProperties: $spConvert.spKeyValueArray(userResult.UserProfileProperties),
+            title: userResult.Title,
+            userUrl: userResult.UserUrl
+          };
+        return result;
+      }
+    };
+  return $spConvert;
+});
 /**
  * @ngdoc service
  * @name ExpertsInside.SharePoint.$spList
@@ -381,5 +472,118 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
         }
       };
     return $spRest;
+  }
+]);
+angular.module('ExpertsInside.SharePoint').factory('$spSearch', [
+  '$http',
+  '$spRest',
+  '$spConvert',
+  function ($http, $spRest, $spConvert) {
+    'use strict';
+    var $spSearchMinErr = angular.$$minErr('$spSearch');
+    var search = {
+        $createQueryProperties: function (searchType, properties) {
+          var queryProperties;
+          switch (searchType) {
+          case 'postquery':
+            queryProperties = new ShareCoffee.PostQueryProperties();
+            break;
+          case 'suggest':
+            queryProperties = new ShareCoffee.SuggestProperties();
+            break;
+          default:
+            queryProperties = new ShareCoffee.QueryProperties();
+            break;
+          }
+          return angular.extend(queryProperties, properties);
+        },
+        $decorateResult: function (result, httpConfig) {
+          if (angular.isUndefined(result.$resolved)) {
+            result.$resolved = false;
+          }
+          result.$raw = null;
+          result.$promise = $http(httpConfig).then(function (response) {
+            var data = response.data;
+            if (angular.isObject(data)) {
+              if (angular.isDefined(data.query)) {
+                result.$raw = data.query;
+                angular.extend(result, $spConvert.searchResult(data.query));
+              } else if (angular.isDefined(data.suggest)) {
+                result.$raw = data.suggest;
+                angular.extend(result, $spConvert.suggestResult(data.suggest));
+              }
+            }
+            if (angular.isUndefined(result.$raw)) {
+              throw $spSearchMinErr('badresponse', 'Response does not contain a valid search result.');
+            }
+            result.$resolved = true;
+            return result;
+          });
+          return result;
+        },
+        query: function (properties) {
+          properties = angular.extend({}, properties);
+          var searchType = properties.searchType;
+          delete properties.searchType;
+          var queryProperties = search.$createQueryProperties(searchType, properties);
+          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(queryProperties);
+          httpConfig.transformResponse = $spRest.transformResponse;
+          var result = {};
+          return search.$decorateResult(result, httpConfig);
+        },
+        postquery: function (properties) {
+          properties = angular.extend(properties, { searchType: 'postquery' });
+          return search.query(properties);
+        },
+        suggest: function (properties) {
+          properties = angular.extend(properties, { searchType: 'suggest' });
+          return search.query(properties);
+        }
+      };
+    return search;
+  }
+]);
+angular.module('ExpertsInside.SharePoint').factory('$spUser', [
+  '$http',
+  '$spRest',
+  '$spConvert',
+  function ($http, $spRest, $spConvert) {
+    'use strict';
+    var $spUserMinErr = angular.$$minErr('$spUser');
+    var $spUser = {
+        $decorateResult: function (result, httpConfig) {
+          if (angular.isUndefined(result.$resolved)) {
+            result.$resolved = false;
+          }
+          result.$raw = null;
+          result.$promise = $http(httpConfig).then(function (response) {
+            var data = response.data;
+            if (angular.isDefined(data)) {
+              result.$raw = data;
+              angular.extend(result, $spConvert.userResult(data));
+            } else {
+              throw $spUserMinErr('badresponse', 'Response does not contain a valid user result.');
+            }
+            result.$resolved = true;
+            return result;
+          });
+          return result;
+        },
+        current: function () {
+          var properties = new ShareCoffee.UserProfileProperties(ShareCoffee.Url.GetMyProperties);
+          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
+          httpConfig.transformResponse = $spRest.transformResponse;
+          var result = {};
+          return $spUser.$decorateResult(result, httpConfig);
+        },
+        get: function (accountName) {
+          var properties = new ShareCoffee.UserProfileProperties(ShareCoffee.Url.GetProperties, accountName);
+          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
+          httpConfig.transformResponse = $spRest.transformResponse;
+          var result = {};
+          return $spUser.$decorateResult(result, httpConfig);
+        }
+      };
+    return $spUser;
   }
 ]);
