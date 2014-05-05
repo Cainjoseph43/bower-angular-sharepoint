@@ -43,7 +43,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
         var result = {};
         for (var i = 0, l = keyValues.length; i < l; i += 1) {
           var keyValue = keyValues[i];
-          var key = keyValue.Key.charAt(0).toLowerCase() + keyValue.Key.slice(1);
+          var key = keyValue.Key;
           result[key] = $spConvert.spKeyValue(keyValue);
         }
         return result;
