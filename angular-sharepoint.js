@@ -6,12 +6,15 @@
  * @description
  * The main module which holds everything together.
  */
-angular.module('ExpertsInside.SharePoint', ['ng']).run(function () {
-  var sharepointMinErr = angular.$$minErr('sharepoint');
-  if (angular.isUndefined(ShareCoffee)) {
-    throw sharepointMinErr('noShareCoffee', 'angular-sharepoint depends on ShareCoffee to do its job.' + 'Either include the bundled ShareCoffee + angular-sharepoint file ' + 'or include ShareCoffe seperately before angular-sharepoint.');
+angular.module('ExpertsInside.SharePoint', ['ng']).run([
+  '$window',
+  '$log',
+  function ($window, $log) {
+    if (angular.isUndefined($window.ShareCoffee)) {
+      $log.error('angular-sharepoint requires ShareCoffee to do its job. ' + 'Please include ShareCoffe.js in your document');
+    }
   }
-});
+]);
 angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
   'use strict';
   var assertType = function (type, obj) {
