@@ -4,7 +4,17 @@
  * @name ExpertsInside.SharePoint
  *
  * @description
- * The main module which holds everything together.
+ *
+ * # ExpertsInside.SharePoint
+ *
+ * The `ExpertsInside.SharePoint` module provides a high level abstraction for
+ * the SharePoint 2013 REST API.
+ *
+ *
+ * ## $spList
+ *
+ * Interaction with SharePoint Lists similiar to $ngResource.
+ * See {@link ExpertsInside.SharePoint.$spList `$spList`} for usage.
  */
 angular.module('ExpertsInside.SharePoint', ['ng']).run([
   '$window',
@@ -102,6 +112,12 @@ angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
             userUrl: userResult.UserUrl
           };
         return result;
+      },
+      capitalize: function (str) {
+        if (angular.isUndefined(str) || str === null) {
+          return null;
+        }
+        return str.charAt(0).toUpperCase() + str.slice(1);
       }
     };
   return $spConvert;
@@ -109,42 +125,134 @@ angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
 /**
  * @ngdoc service
  * @name ExpertsInside.SharePoint.$spList
- * @requires $spRest
+ * @requires ExpertsInside.SharePoint.$spRest
+ * @requires ExpertsInside.SharePoint.$spConvert
  *
- * @description
- * A factory which creates a list object that lets you interact with SharePoint Lists via the
- * SharePoint REST API
+ * @description A factory which creates a list item resource object that lets you interact with
+ *   SharePoint List Items via the SharePoint REST API.
  *
- * The returned list object has action methods which provide high-level behaviors without
- * the need to interact with the low level $http service.
+ *   The returned list item object has action methods which provide high-level behaviors without
+ *   the need to interact with the low level $http service.
  *
- * @return {Object} A list "class" object with the default set of resource actions
+ * @param {string} title The title of the SharePoint List (case-sensitive).
+ *
+ * @param {Object=} listOptions Hash with custom options for this List. The following options are
+ *   supported:
+ *
+ *   - **`readOnlyFields`** - {Array.{string}=} - Array of field names that will be exlcuded
+ *   from the request when saving an item back to SharePoint
+ *   - **`query`** - {Object=} - Default query parameter used by each action. Can be
+ *   overridden per action. See {@link ExpertsInside.SharePoint.$spList query} for details.
+ *
+ * @return {Object} A list item "class" object with methods for the default set of resource actions.
+ *
+ * # List Item class
+ *
+ * All query parameters accept an object with the REST API query string parameters. Prefixing them with $ is optional.
+ *   - **`$select`**
+ *   - **`$filter`**
+ *   - **`$orderby`**
+ *   - **`$top`**
+ *   - **`$skip`**
+ *   - **`$expand`**
+ *   - **`$sort`**
+ *
+ * ## Methods
+ *
+ *   - **`get`** - {function(id, query)} - Get a single list item by id.
+ *   - **`query`** - {function(query, options)} - Query the list for list items and returns the list
+ *     of query results.
+ *     `options` supports the following properties:
+ *       - **`singleResult`** - {boolean} - Returns and empty object instead of an array. Throws an
+ *         error when more than one item is returned by the query.
+ *   - **`create`** - {function(item, query)} - Creates a new list item. Throws an error when item is
+ *     not an instance of the list item class.
+ *   - **`update`** - {function(item, options)} - Updates an existing list item. Throws an error when
+ *     item is not an instance of the list item class. Supported options are:
+ *       - **`query`** - {Object} - Query parameters for the REST call
+ *       - **`force`** - {boolean} - If true, the etag (version) of the item is excluded from the
+ *         request and the server does not check for concurrent changes to the item but just 
+ *         overwrites it. Use with caution.
+ *   - **`save`** - {function(item, options)} - Either creates or updates the item based on its state.
+ *     `options` are passed down to `update` and and `options.query` are passed down to `create`.
+ *   - **`delete`** - {function(item)} - Deletes the list item. Throws an error when item is not an
+ *     instance of the list item class.
+ *
+ * @example
+ *
+ * # Todo List
+ *
+ * ## Defining the Todo class
+ * ```js
+     var Todo = $spList('Todo', {
+       query: ['Id', 'Title', 'Completed']
+     );
+ * ```
+ *
+ * ## Queries
+ *
+ * ```js
+     // We can retrieve all list items from the server.
+     var todos = Todo.query();
+
+    // Or retrieve only the uncompleted todos.
+    var todos = Todo.query({
+      filter: 'Completed eq 0'
+    });
+
+    // Queries that are used in more than one place or those accepting a parameter can be defined 
+    // as a function on the class
+    Todo.addNamedQuery('uncompleted', function() {
+      filter: "Completed eq 0"
+    });
+    var uncompletedTodos = Todo.queries.uncompleted();
+    Todo.addNamedQuery('byTitle', function(title) {
+      filter: "Title eq " + title
+    });
+    var fooTodo = Todo.queries.byTitle('Foo');
+ * ```
  */
 angular.module('ExpertsInside.SharePoint').factory('$spList', [
   '$spRest',
   '$http',
-  function ($spRest, $http) {
+  '$spConvert',
+  function ($spRest, $http, $spConvert) {
     'use strict';
     var $spListMinErr = angular.$$minErr('$spList');
-    function listFactory(name, options) {
-      if (!angular.isString(name) || name === '') {
-        throw $spListMinErr('badargs', 'name must be a nen-empty string.');
+    function listFactory(title, listOptions) {
+      if (!angular.isString(title) || title === '') {
+        throw $spListMinErr('badargs', 'title must be a nen-empty string.');
       }
-      if (!angular.isObject(options)) {
-        options = {};
+      if (!angular.isObject(listOptions)) {
+        listOptions = {};
       }
-      var upcaseName = name.charAt(0).toUpperCase() + name.slice(1);
-      function ListItem(data) {
-        angular.extend(this, data);
-      }
-      ListItem.$$listName = name;
-      ListItem.getListName = function () {
-        return ListItem.$$listName;
-      };
-      ListItem.$$listRelativeUrl = 'web/lists/getByTitle(\'' + name + '\')';
-      ListItem.$decorateResult = function (result, httpConfig) {
-        if (!angular.isArray(result) && !(result instanceof ListItem)) {
-          result = new ListItem(result);
+      var normalizedTitle = $spConvert.capitalize(title.replace(/[^A-Za-z0-9 ]/g, '').replace(/\s/g, '_x0020_'));
+      var className = $spConvert.capitalize(normalizedTitle.replace(/_x0020/g, '').replace(/^\d+/, ''));
+      var listItemType = 'SP.Data.' + normalizedTitle + 'ListItem';
+      // Constructor function for List dynamically generated List class
+      var List = function () {
+          // jshint evil:true
+          var script = ' (function() {                     ' + '   function {{List}}(data) {       ' + '     this.__metadata = {           ' + '       type: \'' + listItemType + '\'' + '     };                            ' + '     angular.extend(this, data);   ' + '   }                               ' + '   return {{List}};                ' + ' })();                             ';
+          return eval(script.replace(/{{List}}/g, className));
+        }();
+      List.$title = title;
+      /**
+       * Web relative list url
+       * @private
+       */
+      List.$$relativeUrl = 'web/lists/getByTitle(\'' + title + '\')';
+      /**
+       * Is this List in the host web?
+       * @private
+       */
+      List.$$inHostWeb = !!listOptions.inHostWeb;
+      /**
+       * Decorate the result with $promise and $resolved
+       * @private
+       */
+      List.$$decorateResult = function (result, httpConfig) {
+        if (!angular.isArray(result) && !(result instanceof List)) {
+          result = new List(result);
         }
         if (angular.isUndefined(result.$resolved)) {
           result.$resolved = false;
@@ -153,7 +261,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           var data = response.data;
           if (angular.isArray(result) && angular.isArray(data)) {
             angular.forEach(data, function (item) {
-              result.push(new ListItem(item));
+              result.push(new List(item));
             });
           } else if (angular.isObject(result)) {
             if (angular.isArray(data)) {
@@ -177,46 +285,92 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         });
         return result;
       };
-      ListItem.get = function (id, query) {
+      /**
+       *
+       * @description Get a single list item by id
+       *
+       * @param {Number} id Id of the list item
+       * @param {Object=} query Additional query properties
+       *
+       * @return {Object} List item instance
+       */
+      List.get = function (id, query) {
         if (angular.isUndefined(id) || id === null) {
           throw $spListMinErr('badargs', 'id is required.');
         }
         var result = { Id: id };
-        var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'get', {
+        var httpConfig = $spRest.buildHttpConfig(List, 'get', {
             id: id,
             query: query
           });
-        return ListItem.$decorateResult(result, httpConfig);
+        return List.$$decorateResult(result, httpConfig);
       };
-      ListItem.query = function (query, options) {
+      /**
+       *
+       * @description Query for the list for items
+       *
+       * @param {Object=} query Query properties
+       * @param {Object=} options Additional query options.
+       *   Accepts the following properties:
+       *   - **`singleResult`** - {boolean} - Returns and empty object instead of an array. Throws an
+       *     error when more than one item is returned by the query.
+       *
+       * @return {Array<Object>} Array of list items
+       */
+      List.query = function (query, options) {
         var result = angular.isDefined(options) && options.singleResult ? {} : [];
-        var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'query', { query: angular.extend({}, ListItem.prototype.$settings.queryDefaults, query) });
-        return ListItem.$decorateResult(result, httpConfig);
+        var httpConfig = $spRest.buildHttpConfig(List, 'query', { query: angular.extend({}, List.prototype.$$queryDefaults, query) });
+        return List.$$decorateResult(result, httpConfig);
       };
-      ListItem.create = function (item, query) {
-        if (!(angular.isObject(item) && item instanceof ListItem)) {
-          throw $spListMinErr('badargs', 'item must be a ListItem instance.');
+      /**
+       *
+       * @description Save a new list item on the server.
+       *
+       * @param {Object=} item Query properties
+       * @param {Object=} options Additional query properties.
+       *
+       * @return {Object} The decorated list item
+       */
+      List.create = function (item, query) {
+        if (!(angular.isObject(item) && item instanceof List)) {
+          throw $spListMinErr('badargs', 'item must be a List instance.');
         }
-        var type = item.$settings.itemType;
-        if (!type) {
-          throw $spListMinErr('badargs', 'Cannot create an item without a valid type');
-        }
-        item.__metadata = { type: type };
-        var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'create', {
+        item.__metadata = angular.extend({ type: listItemType }, item.__metadata);
+        var httpConfig = $spRest.buildHttpConfig(List, 'create', {
             item: item,
-            query: angular.extend({}, item.$settings.queryDefaults, query)
+            query: angular.extend({}, item.$$queryDefaults, query)
           });
-        return ListItem.$decorateResult(item, httpConfig);
+        return List.$$decorateResult(item, httpConfig);
       };
-      ListItem.update = function (item, options) {
-        if (!(angular.isObject(item) && item instanceof ListItem)) {
-          throw $spListMinErr('badargs', 'item must be a ListItem instance.');
+      /**
+       *
+       * @description Update an existing list item on the server.
+       *
+       * @param {Object=} item the list item
+       * @param {Object=} options Additional update properties.
+       *   Accepts the following properties:
+       *   - **`force`** - {boolean} - Overwrite newer versions on the server.
+       *
+       * @return {Object} The decorated list item
+       */
+      List.update = function (item, options) {
+        if (!(angular.isObject(item) && item instanceof List)) {
+          throw $spListMinErr('badargs', 'item must be a List instance.');
         }
         options = angular.extend({}, options, { item: item });
-        var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'update', options);
-        return ListItem.$decorateResult(item, httpConfig);
+        var httpConfig = $spRest.buildHttpConfig(List, 'update', options);
+        return List.$$decorateResult(item, httpConfig);
       };
-      ListItem.save = function (item, options) {
+      /**
+       *
+       * @description Update or create a list item on the server.
+       *
+       * @param {Object=} item the list item
+       * @param {Object=} options Options passed to create or update.
+       *
+       * @return {Object} The decorated list item
+       */
+      List.save = function (item, options) {
         if (angular.isDefined(item.__metadata) && angular.isDefined(item.__metadata.id)) {
           return this.update(item, options);
         } else {
@@ -224,60 +378,79 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           return this.create(item, query);
         }
       };
-      ListItem.delete = function (item) {
-        if (!(angular.isObject(item) && item instanceof ListItem)) {
-          throw $spListMinErr('badargs', 'item must be a ListItem instance.');
+      /**
+       *
+       * @description Delete a list item on the server.
+       *
+       * @param {Object=} item the list item
+       *
+       * @return {Object} The decorated list item
+       */
+      List.delete = function (item) {
+        if (!(angular.isObject(item) && item instanceof List)) {
+          throw $spListMinErr('badargs', 'item must be a List instance.');
         }
-        var httpConfig = $spRest.buildHttpConfig(ListItem.$$listRelativeUrl, 'delete', { item: item });
-        return ListItem.$decorateResult(item, httpConfig);
+        var httpConfig = $spRest.buildHttpConfig(List, 'delete', { item: item });
+        return List.$$decorateResult(item, httpConfig);
       };
-      ListItem.queries = {};
-      ListItem.addNamedQuery = function (name, createQuery, options) {
-        ListItem.queries[name] = function () {
-          var query = angular.extend({}, ListItem.prototype.$settings.queryDefaults, createQuery.apply(ListItem, arguments));
-          return ListItem.query(query, options);
+      /**
+       * Named queries hash
+       */
+      List.queries = {};
+      /**
+       *
+       * @description Add a named query to the queries hash
+       *
+       * @param {Object} name name of the query, used as the function name
+       * @param {Function} createQuery callback invoked with the arguments passed to
+       *   the created named query that creates the final query object
+       * @param {Object=} options Additional query options passed to List.query
+       *
+       * @return {Array} The query result
+       */
+      List.addNamedQuery = function (name, createQuery, options) {
+        List.queries[name] = function () {
+          var query = angular.extend({}, List.prototype.$$queryDefaults, createQuery.apply(List, arguments));
+          return List.query(query, options);
         };
-        return ListItem;
+        return List;
       };
-      ListItem.prototype = {
-        $settings: {
-          itemType: 'SP.Data.' + upcaseName + 'ListItem',
-          readOnlyFields: angular.extend([
-            'AttachmentFiles',
-            'Attachments',
-            'Author',
-            'AuthorId',
-            'ContentType',
-            'ContentTypeId',
-            'Created',
-            'Editor',
-            'EditorId',
-            'FieldValuesAsHtml',
-            'FieldValuesAsText',
-            'FieldValuesForEdit',
-            'File',
-            'FileSystemObjectType',
-            'FirstUniqueAncestorSecurableObject',
-            'Folder',
-            'GUID',
-            'Modified',
-            'OData__UIVersionString',
-            'ParentList',
-            'RoleAssignments'
-          ], options.readOnlyFields),
-          queryDefaults: angular.extend({}, options.queryDefaults)
-        },
+      List.prototype = {
+        $$readOnlyFields: angular.extend([
+          'AttachmentFiles',
+          'Attachments',
+          'Author',
+          'AuthorId',
+          'ContentType',
+          'ContentTypeId',
+          'Created',
+          'Editor',
+          'EditorId',
+          'FieldValuesAsHtml',
+          'FieldValuesAsText',
+          'FieldValuesForEdit',
+          'File',
+          'FileSystemObjectType',
+          'FirstUniqueAncestorSecurableObject',
+          'Folder',
+          'GUID',
+          'Modified',
+          'OData__UIVersionString',
+          'ParentList',
+          'RoleAssignments'
+        ], listOptions.readOnlyFields),
+        $$queryDefaults: angular.extend({}, listOptions.query),
         $save: function (options) {
-          return ListItem.save(this, options).$promise;
+          return List.save(this, options).$promise;
         },
         $delete: function () {
-          return ListItem.delete(this).$promise;
+          return List.delete(this).$promise;
         },
         $isNew: function () {
           return angular.isUndefined(this.__metadata) || angular.isUndefined(this.__metadata.id);
         }
       };
-      return ListItem;
+      return List;
     }
     return listFactory;
   }
@@ -406,16 +579,19 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
         },
         createPayload: function (item) {
           var payload = angular.extend({}, item);
-          if (angular.isDefined(item.$settings) && angular.isDefined(item.$settings.readOnlyFields)) {
-            angular.forEach(item.$settings.readOnlyFields, function (readOnlyField) {
+          if (angular.isDefined(item.$$readOnlyFields)) {
+            angular.forEach(item.$$readOnlyFields, function (readOnlyField) {
               delete payload[readOnlyField];
             });
           }
           return angular.toJson(payload);
         },
-        buildHttpConfig: function (listUrl, action, options) {
-          var baseUrl = listUrl + '/items';
+        buildHttpConfig: function (list, action, options) {
+          var baseUrl = list.$$relativeUrl + '/items';
           var httpConfig = { url: baseUrl };
+          if (list.$$inHostWeb) {
+            httpConfig.hostWebUrl = ShareCoffee.Commons.getHostWebUrl();
+          }
           action = angular.isString(action) ? action.toLowerCase() : '';
           options = angular.isDefined(options) ? options : {};
           var query = angular.isDefined(options.query) ? $spRest.normalizeParams(options.query) : {};
@@ -424,20 +600,21 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             if (angular.isUndefined(options.id)) {
               throw $spRestMinErr('options:get', 'options must have an id');
             }
-            httpConfig = ShareCoffee.REST.build.read.for.angularJS({ url: baseUrl + '(' + options.id + ')' });
+            httpConfig.url += '(' + options.id + ')';
+            httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
             break;
           case 'query':
-            httpConfig = ShareCoffee.REST.build.read.for.angularJS({ url: baseUrl });
+            httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
             break;
           case 'create':
             if (angular.isUndefined(options.item)) {
               throw $spRestMinErr('options:create', 'options must have an item');
             }
-            delete query.$expand;
-            httpConfig = ShareCoffee.REST.build.create.for.angularJS({
-              url: baseUrl,
-              payload: $spRest.createPayload(options.item)
-            });
+            if (angular.isDefined(query)) {
+              delete query.$expand;
+            }
+            httpConfig.payload = $spRest.createPayload(options.item);
+            httpConfig = ShareCoffee.REST.build.create.for.angularJS(httpConfig);
             break;
           case 'update':
             if (angular.isUndefined(options.item)) {
@@ -448,14 +625,10 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             }
             query = {};
             // does nothing or breaks things, so we ignore it
-            var eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
-            httpConfig = ShareCoffee.REST.build.update.for.angularJS({
-              url: baseUrl,
-              payload: $spRest.createPayload(options.item),
-              eTag: eTag
-            });
-            httpConfig.url = options.item.__metadata.uri;
-            // ShareCoffe doesnt work with absolute urls atm
+            httpConfig.url += '(' + options.item.Id + ')';
+            httpConfig.payload = $spRest.createPayload(options.item);
+            httpConfig.eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
+            httpConfig = ShareCoffee.REST.build.update.for.angularJS(httpConfig);
             break;
           case 'delete':
             if (angular.isUndefined(options.item)) {
@@ -464,9 +637,8 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
             if (angular.isUndefined(options.item.__metadata)) {
               throw $spRestMinErr('options:delete', 'options.item must have __metadata');
             }
-            httpConfig = ShareCoffee.REST.build.delete.for.angularJS({ url: baseUrl });
-            httpConfig.url = options.item.__metadata.uri;
-            // ShareCoffe doesnt work with absolute urls atm
+            httpConfig.url += '(' + options.item.Id + ')';
+            httpConfig = ShareCoffee.REST.build.delete.for.angularJS(httpConfig);
             break;
           }
           httpConfig.url = $spRest.appendQueryString(httpConfig.url, query);
@@ -477,6 +649,15 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
     return $spRest;
   }
 ]);
+/**
+ * @ngdoc service
+ * @name ExpertsInside.SharePoint.$spSearch
+ * @requires ExpertsInside.SharePoint.$spRest
+ * @requires ExpertsInside.SharePoint.$spConvert
+ *
+ * @description Query the Search via REST API
+ *
+ */
 angular.module('ExpertsInside.SharePoint').factory('$spSearch', [
   '$http',
   '$spRest',
@@ -546,6 +727,15 @@ angular.module('ExpertsInside.SharePoint').factory('$spSearch', [
     return search;
   }
 ]);
+/**
+ * @ngdoc service
+ * @name ExpertsInside.SharePoint.$spUser
+ * @requires ExpertsInside.SharePoint.$spRest
+ * @requires ExpertsInside.SharePoint.$spConvert
+ *
+ * @description Load user information via UserProfiles REST API
+ *
+ */
 angular.module('ExpertsInside.SharePoint').factory('$spUser', [
   '$http',
   '$spRest',

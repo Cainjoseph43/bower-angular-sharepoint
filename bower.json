@@ -1,5 +1,20 @@
 {
   "name": "angular-sharepoint",
-  "version": "0.2.0",
-  "main": "./angular-sharepoint.js"
+  "version": "0.2.1",
+  "main": "./angular-sharepoint.js",
+  "description": "SharePoint REST API wrapper for AngularJS",
+  "keywords": [
+    "angular",
+    "sharepoint"
+  ],
+  "authors": [
+    "Kevin Mees <kev.mees@gmail.com>"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "angular": ">=1.2.10 <2",
+    "ShareCoffee": "~0.0.13",
+    "ShareCoffee.Search": "~0.0.2",
+    "ShareCoffee.UserProfiles": "*"
+  }
 }
