@@ -16,16 +16,41 @@
  * Interaction with SharePoint Lists similiar to $ngResource.
  * See {@link ExpertsInside.SharePoint.$spList `$spList`} for usage.
  */
-angular.module('ExpertsInside.SharePoint', ['ng']).run([
+angular.module('ExpertsInside.SharePoint.Core', ['ng']).run([
   '$window',
   '$log',
   function ($window, $log) {
     if (angular.isUndefined($window.ShareCoffee)) {
-      $log.error('angular-sharepoint requires ShareCoffee to do its job. ' + 'Please include ShareCoffe.js in your document');
+      $log.warn('ExpertsInside.SharePoint.Core module depends on ShareCoffee. ' + 'Please include ShareCoffee.js in your document');
     }
   }
 ]);
-angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
+angular.module('ExpertsInside.SharePoint.List', ['ExpertsInside.SharePoint.Core']);
+angular.module('ExpertsInside.SharePoint.Search', ['ExpertsInside.SharePoint.Core']).run([
+  '$window',
+  '$log',
+  function ($window, $log) {
+    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.Search)) {
+      $log.warn('ExpertsInside.SharePoint.Search module depends on ShareCoffee.Search ' + 'Please include ShareCoffee.Search.js in your document');
+    }
+  }
+]);
+angular.module('ExpertsInside.SharePoint.User', ['ExpertsInside.SharePoint.Core']).run([
+  '$window',
+  '$log',
+  function ($window, $log) {
+    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.UserProfiles)) {
+      $log.warn('ExpertsInside.SharePoint.User module depends on ShareCoffee.UserProfiles ' + 'Please include ShareCoffee.UserProfiles.js in your document');
+    }
+  }
+]);
+angular.module('ExpertsInside.SharePoint', [
+  'ExpertsInside.SharePoint.Core',
+  'ExpertsInside.SharePoint.List',
+  'ExpertsInside.SharePoint.Search',
+  'ExpertsInside.SharePoint.User'
+]);
+angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function () {
   'use strict';
   var assertType = function (type, obj) {
     if (!angular.isObject(obj.__metadata) || obj.__metadata.type !== type) {
@@ -124,9 +149,9 @@ angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
 });
 /**
  * @ngdoc service
- * @name ExpertsInside.SharePoint.$spList
- * @requires ExpertsInside.SharePoint.$spRest
- * @requires ExpertsInside.SharePoint.$spConvert
+ * @name ExpertsInside.SharePoint.List.$spList
+ * @requires ExpertsInside.SharePoint.Core.$spRest
+ * @requires ExpertsInside.SharePoint.Core.$spConvert
  *
  * @description A factory which creates a list item resource object that lets you interact with
  *   SharePoint List Items via the SharePoint REST API.
@@ -212,7 +237,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spConvert', function () {
     var fooTodo = Todo.queries.byTitle('Foo');
  * ```
  */
-angular.module('ExpertsInside.SharePoint').factory('$spList', [
+angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
   '$spRest',
   '$http',
   '$spConvert',
@@ -231,16 +256,37 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
       var listItemType = 'SP.Data.' + normalizedTitle + 'ListItem';
       // Constructor function for List dynamically generated List class
       var List = function () {
-          // jshint evil:true
-          var script = ' (function() {                     ' + '   function {{List}}(data) {       ' + '     this.__metadata = {           ' + '       type: \'' + listItemType + '\'' + '     };                            ' + '     angular.extend(this, data);   ' + '   }                               ' + '   return {{List}};                ' + ' })();                             ';
-          return eval(script.replace(/{{List}}/g, className));
+          // jshint evil:true, validthis:true
+          function __List__(data) {
+            this.__metadata = { type: listItemType };
+            angular.extend(this, data);
+          }
+          var script = ' (function() {                     ' + __List__.toString() + '   return __List__;                ' + ' })();                             ';
+          return eval(script.replace(/__List__/g, className));
         }();
-      List.$title = title;
+      /**
+       * Title of the list
+       * @private
+       */
+      List.$$title = title;
+      /**
+       * Allowed query parameters
+       * @private
+       */
+      List.$$queryParameterWhitelist = [
+        '$select',
+        '$filter',
+        '$orderby',
+        '$top',
+        '$skip',
+        '$expand',
+        '$sort'
+      ];
       /**
        * Web relative list url
        * @private
        */
-      List.$$relativeUrl = 'web/lists/getByTitle(\'' + title + '\')';
+      List.$$relativeUrl = 'web/lists/getByTitle(\'' + List.$$title + '\')';
       /**
        * Is this List in the host web?
        * @private
@@ -287,6 +333,77 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
       };
       /**
        *
+       * @description Builds the http config for the list CRUD actions
+       *
+       * @param {Object} list List constructor
+       * @param {string} action CRUD action
+       *
+       * @returns {Object} http config
+       */
+      List.$$buildHttpConfig = function (action, options) {
+        var baseUrl = List.$$relativeUrl + '/items';
+        var httpConfig = { url: baseUrl };
+        if (List.$$inHostWeb) {
+          httpConfig.hostWebUrl = ShareCoffee.Commons.getHostWebUrl();
+        }
+        action = angular.isString(action) ? action.toLowerCase() : '';
+        options = angular.isDefined(options) ? options : {};
+        var query = angular.isDefined(options.query) ? $spRest.normalizeParams(options.query, List.$$queryParameterWhitelist) : {};
+        switch (action) {
+        case 'get':
+          if (angular.isUndefined(options.id)) {
+            throw $spListMinErr('options:get', 'options must have an id');
+          }
+          httpConfig.url += '(' + options.id + ')';
+          httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
+          break;
+        case 'query':
+          httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
+          break;
+        case 'create':
+          if (angular.isUndefined(options.item)) {
+            throw $spListMinErr('options:create', 'options must have an item');
+          }
+          if (angular.isUndefined(options.item.__metadata)) {
+            throw $spListMinErr('options:create', 'options.item must have __metadata property');
+          }
+          if (angular.isDefined(query)) {
+            delete query.$expand;
+          }
+          httpConfig.payload = options.item.$toJson();
+          httpConfig = ShareCoffee.REST.build.create.for.angularJS(httpConfig);
+          break;
+        case 'update':
+          if (angular.isUndefined(options.item)) {
+            throw $spListMinErr('options:update', 'options must have an item');
+          }
+          if (angular.isUndefined(options.item.__metadata)) {
+            throw $spListMinErr('options:create', 'options.item must have __metadata property');
+          }
+          query = {};
+          // does nothing or breaks things, so we ignore it
+          httpConfig.url += '(' + options.item.Id + ')';
+          httpConfig.payload = options.item.$toJson();
+          httpConfig.eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
+          httpConfig = ShareCoffee.REST.build.update.for.angularJS(httpConfig);
+          break;
+        case 'delete':
+          if (angular.isUndefined(options.item)) {
+            throw $spListMinErr('options:delete', 'options must have an item');
+          }
+          if (angular.isUndefined(options.item.__metadata)) {
+            throw $spListMinErr('options:delete', 'options.item must have __metadata');
+          }
+          httpConfig.url += '(' + options.item.Id + ')';
+          httpConfig = ShareCoffee.REST.build.delete.for.angularJS(httpConfig);
+          break;
+        }
+        httpConfig.url = $spRest.appendQueryParameters(httpConfig.url, query);
+        httpConfig.transformResponse = $spRest.transformResponse;
+        return httpConfig;
+      };
+      /**
+       *
        * @description Get a single list item by id
        *
        * @param {Number} id Id of the list item
@@ -299,7 +416,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           throw $spListMinErr('badargs', 'id is required.');
         }
         var result = { Id: id };
-        var httpConfig = $spRest.buildHttpConfig(List, 'get', {
+        var httpConfig = List.$$buildHttpConfig('get', {
             id: id,
             query: query
           });
@@ -319,7 +436,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
        */
       List.query = function (query, options) {
         var result = angular.isDefined(options) && options.singleResult ? {} : [];
-        var httpConfig = $spRest.buildHttpConfig(List, 'query', { query: angular.extend({}, List.prototype.$$queryDefaults, query) });
+        var httpConfig = List.$$buildHttpConfig('query', { query: angular.extend({}, List.prototype.$$queryDefaults, query) });
         return List.$$decorateResult(result, httpConfig);
       };
       /**
@@ -336,7 +453,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           throw $spListMinErr('badargs', 'item must be a List instance.');
         }
         item.__metadata = angular.extend({ type: listItemType }, item.__metadata);
-        var httpConfig = $spRest.buildHttpConfig(List, 'create', {
+        var httpConfig = List.$$buildHttpConfig('create', {
             item: item,
             query: angular.extend({}, item.$$queryDefaults, query)
           });
@@ -358,7 +475,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           throw $spListMinErr('badargs', 'item must be a List instance.');
         }
         options = angular.extend({}, options, { item: item });
-        var httpConfig = $spRest.buildHttpConfig(List, 'update', options);
+        var httpConfig = List.$$buildHttpConfig('update', options);
         return List.$$decorateResult(item, httpConfig);
       };
       /**
@@ -390,7 +507,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         if (!(angular.isObject(item) && item instanceof List)) {
           throw $spListMinErr('badargs', 'item must be a List instance.');
         }
-        var httpConfig = $spRest.buildHttpConfig(List, 'delete', { item: item });
+        var httpConfig = List.$$buildHttpConfig('delete', { item: item });
         return List.$$decorateResult(item, httpConfig);
       };
       /**
@@ -414,6 +531,24 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
           return List.query(query, options);
         };
         return List;
+      };
+      /**
+       *
+       * @description Create a copy of the item, remove read-only fields
+       *   and stringify it.
+       *
+       * @param {Object} item list item
+       *
+       * @returns {string} json representation
+       */
+      List.toJson = function (item) {
+        var copy = angular.extend({}, item);
+        if (angular.isDefined(item.$$readOnlyFields)) {
+          angular.forEach(item.$$readOnlyFields, function (readOnlyField) {
+            delete copy[readOnlyField];
+          });
+        }
+        return angular.toJson(copy);
       };
       List.prototype = {
         $$readOnlyFields: angular.extend([
@@ -448,6 +583,9 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
         },
         $isNew: function () {
           return angular.isUndefined(this.__metadata) || angular.isUndefined(this.__metadata.id);
+        },
+        $toJson: function () {
+          return List.toJson(this);
         }
       };
       return List;
@@ -457,15 +595,24 @@ angular.module('ExpertsInside.SharePoint').factory('$spList', [
 ]);
 /**
  * @ngdoc object
- * @name ExpertsInside.SharePoint.$spPageContextInfo
- * @requires $window, $rootScope
+ * @name ExpertsInside.SharePoint.Core.$spPageContextInfo
+ * @requires $window
+ * @requires $rootScope
  *
  * @description
- * Wraps the global '_spPageContextInfo' object in an angular service
+ * A reference to the documents `_spPageContextInfo` object. While `_spPageContextInfo`
+ * is globally available in JavaScript, it causes testability problems, because
+ * it is a global variable. When referring to it thorugh the `$spPageContextInfo` service,
+ * it may be overridden, removed or mocked for testing.
  *
- * @return {Object} $spPageContextInfo Copy of the global '_spPageContextInfo' object
+ * @example
+ * ```js
+     function Ctrl($scope, $spPageContextInfo) {
+        $scope.userName = $spPageContextInfo.userLoginName
+      }
+ * ```
  */
-angular.module('ExpertsInside.SharePoint').factory('$spPageContextInfo', [
+angular.module('ExpertsInside.SharePoint.Core').factory('$spPageContextInfo', [
   '$rootScope',
   '$window',
   function ($rootScope, $window) {
@@ -480,11 +627,30 @@ angular.module('ExpertsInside.SharePoint').factory('$spPageContextInfo', [
     return $spPageContextInfo;
   }
 ]);
-angular.module('ExpertsInside.SharePoint').factory('$spRest', [
+/**
+ * @ngdoc service
+ * @name ExpertsInside.SharePoint.Core.$spRest
+ * @requires $log
+ *
+ * @description
+ * Utility functions when interacting with the SharePoint REST API
+ *
+ */
+angular.module('ExpertsInside.SharePoint.Core').factory('$spRest', [
   '$log',
   function ($log) {
     'use strict';
-    var $spRestMinErr = angular.$$minErr('$spRest');
+    // var $spRestMinErr = angular.$$minErr('$spRest');
+    /**
+     * @name unique
+     * @private
+     *
+     * Copy the array without duplicates
+     *
+     * @param {array} arr input array
+     *
+     * @returns {array} input array without duplicates
+     */
     var unique = function (arr) {
       return arr.reduce(function (r, x) {
         if (r.indexOf(x) < 0) {
@@ -493,15 +659,16 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
         return r;
       }, []);
     };
-    var validParamKeys = [
-        '$select',
-        '$filter',
-        '$orderby',
-        '$top',
-        '$skip',
-        '$expand',
-        '$sort'
-      ];
+    /**
+     * @name getKeysSorted
+     * @private
+     *
+     * Get all keys from the object and sort them
+     *
+     * @param {Object} obj input object
+     *
+     * @returns {Array} Sorted object keys
+     */
     function getKeysSorted(obj) {
       var keys = [];
       if (angular.isUndefined(obj) || obj === null) {
@@ -547,7 +714,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
           var queryString = parts.join('&');
           return queryString;
         },
-        normalizeParams: function (params) {
+        normalizeParams: function (params, whitelist) {
           params = angular.extend({}, params);
           //make a copy
           if (angular.isDefined(params)) {
@@ -557,8 +724,8 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
                 key = '$' + key;
                 params[key] = value;
               }
-              if (validParamKeys.indexOf(key) === -1) {
-                $log.warn('Invalid param key: ' + key);
+              if (angular.isDefined(whitelist) && whitelist.indexOf(key) === -1) {
+                $log.warn('Invalid param key detected: ' + key);
                 delete params[key];
               }
             });
@@ -570,80 +737,12 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
           }
           return params;
         },
-        appendQueryString: function (url, params) {
+        appendQueryParameters: function (url, params) {
           var queryString = $spRest.buildQueryString(params);
           if (queryString !== '') {
             url += (url.indexOf('?') === -1 ? '?' : '&') + queryString;
           }
           return url;
-        },
-        createPayload: function (item) {
-          var payload = angular.extend({}, item);
-          if (angular.isDefined(item.$$readOnlyFields)) {
-            angular.forEach(item.$$readOnlyFields, function (readOnlyField) {
-              delete payload[readOnlyField];
-            });
-          }
-          return angular.toJson(payload);
-        },
-        buildHttpConfig: function (list, action, options) {
-          var baseUrl = list.$$relativeUrl + '/items';
-          var httpConfig = { url: baseUrl };
-          if (list.$$inHostWeb) {
-            httpConfig.hostWebUrl = ShareCoffee.Commons.getHostWebUrl();
-          }
-          action = angular.isString(action) ? action.toLowerCase() : '';
-          options = angular.isDefined(options) ? options : {};
-          var query = angular.isDefined(options.query) ? $spRest.normalizeParams(options.query) : {};
-          switch (action) {
-          case 'get':
-            if (angular.isUndefined(options.id)) {
-              throw $spRestMinErr('options:get', 'options must have an id');
-            }
-            httpConfig.url += '(' + options.id + ')';
-            httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
-            break;
-          case 'query':
-            httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
-            break;
-          case 'create':
-            if (angular.isUndefined(options.item)) {
-              throw $spRestMinErr('options:create', 'options must have an item');
-            }
-            if (angular.isDefined(query)) {
-              delete query.$expand;
-            }
-            httpConfig.payload = $spRest.createPayload(options.item);
-            httpConfig = ShareCoffee.REST.build.create.for.angularJS(httpConfig);
-            break;
-          case 'update':
-            if (angular.isUndefined(options.item)) {
-              throw $spRestMinErr('options:update', 'options must have an item');
-            }
-            if (angular.isUndefined(options.item.__metadata)) {
-              throw $spRestMinErr('options:update', 'options.item must have __metadata');
-            }
-            query = {};
-            // does nothing or breaks things, so we ignore it
-            httpConfig.url += '(' + options.item.Id + ')';
-            httpConfig.payload = $spRest.createPayload(options.item);
-            httpConfig.eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
-            httpConfig = ShareCoffee.REST.build.update.for.angularJS(httpConfig);
-            break;
-          case 'delete':
-            if (angular.isUndefined(options.item)) {
-              throw $spRestMinErr('options:delete', 'options must have an item');
-            }
-            if (angular.isUndefined(options.item.__metadata)) {
-              throw $spRestMinErr('options:delete', 'options.item must have __metadata');
-            }
-            httpConfig.url += '(' + options.item.Id + ')';
-            httpConfig = ShareCoffee.REST.build.delete.for.angularJS(httpConfig);
-            break;
-          }
-          httpConfig.url = $spRest.appendQueryString(httpConfig.url, query);
-          httpConfig.transformResponse = $spRest.transformResponse;
-          return httpConfig;
         }
       };
     return $spRest;
@@ -658,7 +757,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spRest', [
  * @description Query the Search via REST API
  *
  */
-angular.module('ExpertsInside.SharePoint').factory('$spSearch', [
+angular.module('ExpertsInside.SharePoint.Search').factory('$spSearch', [
   '$http',
   '$spRest',
   '$spConvert',
@@ -736,7 +835,7 @@ angular.module('ExpertsInside.SharePoint').factory('$spSearch', [
  * @description Load user information via UserProfiles REST API
  *
  */
-angular.module('ExpertsInside.SharePoint').factory('$spUser', [
+angular.module('ExpertsInside.SharePoint.User').factory('$spUser', [
   '$http',
   '$spRest',
   '$spConvert',
