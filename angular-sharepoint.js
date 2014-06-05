@@ -1,20 +1,14 @@
 'use strict';
 /**
  * @ngdoc overview
- * @name ExpertsInside.SharePoint
+ * @name ExpertsInside.SharePoint.Core
  *
  * @description
  *
- * # ExpertsInside.SharePoint
+ * # ExpertsInside.SharePoint.Core
  *
- * The `ExpertsInside.SharePoint` module provides a high level abstraction for
- * the SharePoint 2013 REST API.
- *
- *
- * ## $spList
- *
- * Interaction with SharePoint Lists similiar to $ngResource.
- * See {@link ExpertsInside.SharePoint.$spList `$spList`} for usage.
+ * The ExpertsInside.SharePoint.Core module contains utility services
+ * used by the other modules.
  */
 angular.module('ExpertsInside.SharePoint.Core', ['ng']).run([
   '$window',
@@ -25,31 +19,186 @@ angular.module('ExpertsInside.SharePoint.Core', ['ng']).run([
     }
   }
 ]);
+/**
+ * @ngdoc overview
+ * @name ExpertsInside.SharePoint.List
+ * @requires ExpertsInside.SharePoint.Core
+ *
+ * @description
+ *
+ * # ExpertsInside.SharePoint.List
+ *
+ * The ExpertsInside.SharePoint.List module contains the
+ * {@link ExpertsInside.SharePoint.List.$spList `$spList`} service,
+ * a wrapper for the List REST API
+ */
 angular.module('ExpertsInside.SharePoint.List', ['ExpertsInside.SharePoint.Core']);
+/**
+ * @ngdoc overview
+ * @name ExpertsInside.SharePoint.Search
+ * @requires ExpertsInside.SharePoint.Core
+ *
+ * @description
+ *
+ * # ExpertsInside.SharePoint.Search
+ *
+ * The ExpertsInside.SharePoint.Search module contains the
+ * {@link ExpertsInside.SharePoint.Search.$spSearch `$spSearch`} service,
+ * a wrapper for the Search REST API.
+ *
+ * Include **ShareCoffee.Search.js** when using this module !
+ */
 angular.module('ExpertsInside.SharePoint.Search', ['ExpertsInside.SharePoint.Core']).run([
   '$window',
   '$log',
   function ($window, $log) {
     if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.Search)) {
-      $log.warn('ExpertsInside.SharePoint.Search module depends on ShareCoffee.Search ' + 'Please include ShareCoffee.Search.js in your document');
+      $log.warn('ExpertsInside.SharePoint.Search module depends on ShareCoffee.Search. ' + 'Please include ShareCoffee.Search.js in your document');
     }
   }
 ]);
+/**
+ * @ngdoc overview
+ * @name ExpertsInside.SharePoint.User
+ * @requires ExpertsInside.SharePoint.Core
+ *
+ * @description
+ *
+ * # ExpertsInside.SharePoint.User
+ *
+ * The ExpertsInside.SharePoint.User module contains the
+ * {@link ExpertsInside.SharePoint.User.$spUser `$spUser`} service,
+ * a wrapper for the User Profiles REST API
+ *
+ * Include **ShareCoffee.UserProfiles.js** when using this module !
+ */
 angular.module('ExpertsInside.SharePoint.User', ['ExpertsInside.SharePoint.Core']).run([
   '$window',
   '$log',
   function ($window, $log) {
     if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.UserProfiles)) {
-      $log.warn('ExpertsInside.SharePoint.User module depends on ShareCoffee.UserProfiles ' + 'Please include ShareCoffee.UserProfiles.js in your document');
+      $log.warn('ExpertsInside.SharePoint.User module depends on ShareCoffee.UserProfiles. ' + 'Please include ShareCoffee.UserProfiles.js in your document');
     }
   }
 ]);
+/**
+ * @ngdoc overview
+ * @name ExpertsInside.SharePoint.JSOM
+ *
+ * @description
+ *
+ * # ExpertsInside.SharePoint.JSOM
+ *
+ * The ExpertsInside.SharePoint.User module contains the
+ * {@link ExpertsInside.SharePoint.User.$spUser `$spUser`} service,
+ * a wrapper for the User Profiles REST API
+ *
+ * Include **ShareCoffee.UserProfiles.js** when using this module !
+ */
+angular.module('ExpertsInside.SharePoint.JSOM', []).run([
+  '$window',
+  '$log',
+  function ($window, $log) {
+    if (angular.isUndefined($window.SP) || angular.isUndefined($window.SP.ClientContext)) {
+      $log.warn('ExpertsInside.SharePoint.JSOM module depends on the SharePoint Javascript Runtime. ' + 'For more information see: http://blogs.msdn.com/b/officeapps/archive/2012/09/04/using-the-javascript-object-model-jsom-in-apps-for-sharepoint.aspx');
+    }
+  }
+]);
+/**
+ * @ngdoc overview
+ * @name ExpertsInside.SharePoint
+ * @requires ExpertsInside.SharePoint.Core
+ * @requires ExpertsInside.SharePoint.List
+ * @requires ExpertsInside.SharePoint.Search
+ * @requires ExpertsInside.SharePoint.User
+ * @requires ExpertsInside.SharePoint.JSOM
+ *
+ * @description
+ *
+ * # ExpertsInside.SharePoint
+ *
+ * The complete `angular-sharepoint` experience.
+ *
+ */
 angular.module('ExpertsInside.SharePoint', [
   'ExpertsInside.SharePoint.Core',
   'ExpertsInside.SharePoint.List',
   'ExpertsInside.SharePoint.Search',
   'ExpertsInside.SharePoint.User'
 ]);
+/**
+ * @ngdoc object
+ * @name ExpertsInside.SharePoint.JSOM.$spClientContext
+ *
+ * @description The `$spClientContext` creates a SP.ClientContext
+ *  instance and extends it with methods that return AngularJS
+ *  promises for async opertations.
+ *
+ * @example
+ * ```js
+   var ctx = $spClientContext.create();
+   ctx.$load(ctx.get_web()).then(function(web) {
+     $scope.webTitle = web.get_title();
+   });
+   ctx.$executeQueryAsync().then(function() {
+     $log.debug('executeQuery done!');
+   })
+ * ```
+ */
+angular.module('ExpertsInside.SharePoint.JSOM').factory('$spClientContext', [
+  '$window',
+  '$q',
+  function ($window, $q) {
+    'use strict';
+    // var $spClientContextMinErr = angular.$$minErr('$spClientContext');
+    var spContext = {
+        create: function () {
+          var ctx = new $window.SP.ClientContext(ShareCoffee.Commons.getAppWebUrl());
+          ctx.$$awaitingLoads = [];
+          ctx.$load = function () {
+            var args = Array.prototype.slice.call(arguments, 0);
+            var deferred = $q.defer();
+            $window.SP.ClientContext.prototype.load.apply(ctx, arguments);
+            ctx.$$awaitingLoads.push({
+              deferred: deferred,
+              args: args
+            });
+            return deferred.promise;
+          };
+          ctx.$executeQueryAsync = function () {
+            var deferred = $q.defer();
+            ctx.executeQueryAsync(function () {
+              angular.forEach(ctx.$$awaitingLoads, function (load) {
+                var deferredLoad = load.deferred;
+                deferredLoad.resolve.apply(deferredLoad, load.args);
+              });
+              deferred.resolve(ctx);
+              ctx.$$awaitingLoads.length = 0;
+            }, function () {
+              var errorArgs = arguments;
+              angular.forEach(ctx.$$awaitingLoads, function (load) {
+                var deferredLoad = load.deferred;
+                deferredLoad.reject.apply(deferredLoad, errorArgs);
+              });
+              deferred.reject.apply(deferred, errorArgs);
+              ctx.$$awaitingLoads.length = 0;
+            });
+            return deferred.promise;
+          };
+          return ctx;
+        }
+      };
+    return spContext;
+  }
+]);
+/**
+ * @ngdoc object
+ * @name ExpertsInside.SharePoint.Core.$spConvert
+ *
+ * @description The `$spConvert` service exposes functions
+ *  that convert (arrays of) EDM datatypes to javascript
+ *  values or objects and the search results containing them.
+ */
 angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function () {
   'use strict';
   var assertType = function (type, obj) {
@@ -167,75 +316,17 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function (
  *   - **`readOnlyFields`** - {Array.{string}=} - Array of field names that will be exlcuded
  *   from the request when saving an item back to SharePoint
  *   - **`query`** - {Object=} - Default query parameter used by each action. Can be
- *   overridden per action. See {@link ExpertsInside.SharePoint.$spList query} for details.
+ *   overridden per action. Prefixing them with `$` is optional. Valid keys:
+ *       - **`$select`**
+ *       - **`$filter`**
+ *       - **`$orderby`**
+ *       - **`$top`**
+ *       - **`$skip`**
+ *       - **`$expand`**
+ *       - **`$sort`**
  *
- * @return {Object} A list item "class" object with methods for the default set of resource actions.
- *
- * # List Item class
- *
- * All query parameters accept an object with the REST API query string parameters. Prefixing them with $ is optional.
- *   - **`$select`**
- *   - **`$filter`**
- *   - **`$orderby`**
- *   - **`$top`**
- *   - **`$skip`**
- *   - **`$expand`**
- *   - **`$sort`**
- *
- * ## Methods
- *
- *   - **`get`** - {function(id, query)} - Get a single list item by id.
- *   - **`query`** - {function(query, options)} - Query the list for list items and returns the list
- *     of query results.
- *     `options` supports the following properties:
- *       - **`singleResult`** - {boolean} - Returns and empty object instead of an array. Throws an
- *         error when more than one item is returned by the query.
- *   - **`create`** - {function(item, query)} - Creates a new list item. Throws an error when item is
- *     not an instance of the list item class.
- *   - **`update`** - {function(item, options)} - Updates an existing list item. Throws an error when
- *     item is not an instance of the list item class. Supported options are:
- *       - **`query`** - {Object} - Query parameters for the REST call
- *       - **`force`** - {boolean} - If true, the etag (version) of the item is excluded from the
- *         request and the server does not check for concurrent changes to the item but just 
- *         overwrites it. Use with caution.
- *   - **`save`** - {function(item, options)} - Either creates or updates the item based on its state.
- *     `options` are passed down to `update` and and `options.query` are passed down to `create`.
- *   - **`delete`** - {function(item)} - Deletes the list item. Throws an error when item is not an
- *     instance of the list item class.
- *
- * @example
- *
- * # Todo List
- *
- * ## Defining the Todo class
- * ```js
-     var Todo = $spList('Todo', {
-       query: ['Id', 'Title', 'Completed']
-     );
- * ```
- *
- * ## Queries
- *
- * ```js
-     // We can retrieve all list items from the server.
-     var todos = Todo.query();
-
-    // Or retrieve only the uncompleted todos.
-    var todos = Todo.query({
-      filter: 'Completed eq 0'
-    });
-
-    // Queries that are used in more than one place or those accepting a parameter can be defined 
-    // as a function on the class
-    Todo.addNamedQuery('uncompleted', function() {
-      filter: "Completed eq 0"
-    });
-    var uncompletedTodos = Todo.queries.uncompleted();
-    Todo.addNamedQuery('byTitle', function(title) {
-      filter: "Title eq " + title
-    });
-    var fooTodo = Todo.queries.byTitle('Foo');
- * ```
+ * @return {Object} A dynamically created  class constructor for list items.
+ *   See {@link ExpertsInside.SharePoint.List.$spList+ListItem $spList+ListItem} for details.
  */
 angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
   '$spRest',
@@ -255,6 +346,16 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       var className = $spConvert.capitalize(normalizedTitle.replace(/_x0020/g, '').replace(/^\d+/, ''));
       var listItemType = 'SP.Data.' + normalizedTitle + 'ListItem';
       // Constructor function for List dynamically generated List class
+      /**
+       * @ngdoc service
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem
+       *
+       * @description The dynamically created List Item class, created by
+       *   {@link ExpertsInside.SharePoint.List.$spList $spList}. 
+       *
+       *   Note that all methods prefixed with a `$` are *instance* (or prototype) methods.
+       *   Ngdoc doesn't seem to have out-of-box support for those.
+       */
       var List = function () {
           // jshint evil:true, validthis:true
           function __List__(data) {
@@ -265,13 +366,13 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
           return eval(script.replace(/__List__/g, className));
         }();
       /**
-       * Title of the list
        * @private
+       * Title of the list
        */
       List.$$title = title;
       /**
-       * Allowed query parameters
        * @private
+       * Allowed query parameters
        */
       List.$$queryParameterWhitelist = [
         '$select',
@@ -283,18 +384,18 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         '$sort'
       ];
       /**
-       * Web relative list url
        * @private
+       * Web relative list url
        */
       List.$$relativeUrl = 'web/lists/getByTitle(\'' + List.$$title + '\')';
       /**
-       * Is this List in the host web?
        * @private
+       * Is this List in the host web?
        */
       List.$$inHostWeb = !!listOptions.inHostWeb;
       /**
-       * Decorate the result with $promise and $resolved
        * @private
+       * Decorate the result with $promise and $resolved
        */
       List.$$decorateResult = function (result, httpConfig) {
         if (!angular.isArray(result) && !(result instanceof List)) {
@@ -332,7 +433,7 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return result;
       };
       /**
-       *
+       * @private
        * @description Builds the http config for the list CRUD actions
        *
        * @param {Object} list List constructor
@@ -403,6 +504,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return httpConfig;
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#get
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Get a single list item by id
        *
@@ -423,6 +527,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List.$$decorateResult(result, httpConfig);
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#query
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Query for the list for items
        *
@@ -440,8 +547,11 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List.$$decorateResult(result, httpConfig);
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#create
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
-       * @description Save a new list item on the server.
+       * @description Create a new list item on the server.
        *
        * @param {Object=} item Query properties
        * @param {Object=} options Additional query properties.
@@ -460,6 +570,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List.$$decorateResult(item, httpConfig);
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#update
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Update an existing list item on the server.
        *
@@ -479,6 +592,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List.$$decorateResult(item, httpConfig);
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#save
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Update or create a list item on the server.
        *
@@ -496,6 +612,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         }
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#delete
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Delete a list item on the server.
        *
@@ -511,10 +630,17 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List.$$decorateResult(item, httpConfig);
       };
       /**
-       * Named queries hash
+       * @ngdoc object
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#queries
+       * @propertyOf ExpertsInside.SharePoint.List.$spList+ListItem
+       *
+       * @description Object that holds the created named queries
        */
       List.queries = {};
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#addNamedQuery
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Add a named query to the queries hash
        *
@@ -533,13 +659,16 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
         return List;
       };
       /**
+       * @ngdoc method
+       * @name ExpertsInside.SharePoint.List.$spList+ListItem#toJson
+       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
        *
        * @description Create a copy of the item, remove read-only fields
        *   and stringify it.
        *
        * @param {Object} item list item
        *
-       * @returns {string} json representation
+       * @returns {string} JSON representation
        */
       List.toJson = function (item) {
         var copy = angular.extend({}, item);
@@ -596,14 +725,15 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
 /**
  * @ngdoc object
  * @name ExpertsInside.SharePoint.Core.$spPageContextInfo
- * @requires $window
- * @requires $rootScope
  *
  * @description
  * A reference to the documents `_spPageContextInfo` object. While `_spPageContextInfo`
  * is globally available in JavaScript, it causes testability problems, because
  * it is a global variable. When referring to it thorugh the `$spPageContextInfo` service,
  * it may be overridden, removed or mocked for testing.
+ *
+ * See {@link http://tjendarta.wordpress.com/2013/07/16/_sppagecontextinfo-properties-value/ _spPageContextInfo Properties}
+ * for more information.
  *
  * @example
  * ```js
@@ -630,7 +760,6 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spPageContextInfo', [
 /**
  * @ngdoc service
  * @name ExpertsInside.SharePoint.Core.$spRest
- * @requires $log
  *
  * @description
  * Utility functions when interacting with the SharePoint REST API
@@ -750,9 +879,9 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spRest', [
 ]);
 /**
  * @ngdoc service
- * @name ExpertsInside.SharePoint.$spSearch
- * @requires ExpertsInside.SharePoint.$spRest
- * @requires ExpertsInside.SharePoint.$spConvert
+ * @name ExpertsInside.SharePoint.Search.$spSearch
+ * @requires ExpertsInside.SharePoint.Core.$spRest
+ * @requires ExpertsInside.SharePoint.Core.$spConvert
  *
  * @description Query the Search via REST API
  *
@@ -765,7 +894,7 @@ angular.module('ExpertsInside.SharePoint.Search').factory('$spSearch', [
     'use strict';
     var $spSearchMinErr = angular.$$minErr('$spSearch');
     var search = {
-        $createQueryProperties: function (searchType, properties) {
+        $$createQueryProperties: function (searchType, properties) {
           var queryProperties;
           switch (searchType) {
           case 'postquery':
@@ -808,7 +937,7 @@ angular.module('ExpertsInside.SharePoint.Search').factory('$spSearch', [
           properties = angular.extend({}, properties);
           var searchType = properties.searchType;
           delete properties.searchType;
-          var queryProperties = search.$createQueryProperties(searchType, properties);
+          var queryProperties = search.$$createQueryProperties(searchType, properties);
           var httpConfig = ShareCoffee.REST.build.read.for.angularJS(queryProperties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
@@ -828,9 +957,9 @@ angular.module('ExpertsInside.SharePoint.Search').factory('$spSearch', [
 ]);
 /**
  * @ngdoc service
- * @name ExpertsInside.SharePoint.$spUser
- * @requires ExpertsInside.SharePoint.$spRest
- * @requires ExpertsInside.SharePoint.$spConvert
+ * @name ExpertsInside.SharePoint.User.$spUser
+ * @requires ExpertsInside.SharePoint.Core.$spRest
+ * @requires ExpertsInside.SharePoint.Core.$spConvert
  *
  * @description Load user information via UserProfiles REST API
  *
@@ -843,7 +972,7 @@ angular.module('ExpertsInside.SharePoint.User').factory('$spUser', [
     'use strict';
     var $spUserMinErr = angular.$$minErr('$spUser');
     var $spUser = {
-        $decorateResult: function (result, httpConfig) {
+        $$decorateResult: function (result, httpConfig) {
           if (angular.isUndefined(result.$resolved)) {
             result.$resolved = false;
           }
@@ -866,14 +995,14 @@ angular.module('ExpertsInside.SharePoint.User').factory('$spUser', [
           var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
-          return $spUser.$decorateResult(result, httpConfig);
+          return $spUser.$$decorateResult(result, httpConfig);
         },
         get: function (accountName) {
           var properties = new ShareCoffee.UserProfileProperties(ShareCoffee.Url.GetProperties, accountName);
           var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
-          return $spUser.$decorateResult(result, httpConfig);
+          return $spUser.$$decorateResult(result, httpConfig);
         }
       };
     return $spUser;
