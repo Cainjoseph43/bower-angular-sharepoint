@@ -1,6 +1,6 @@
 {
   "name": "angular-sharepoint",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "main": "./angular-sharepoint.js",
   "description": "SharePoint REST API wrapper for AngularJS",
   "keywords": [

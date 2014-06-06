@@ -131,8 +131,15 @@ angular.module('ExpertsInside.SharePoint', [
  * @name ExpertsInside.SharePoint.JSOM.$spClientContext
  *
  * @description The `$spClientContext` creates a SP.ClientContext
- *  instance and extends it with methods that return AngularJS
+ *  instance and empowers it with methods that return AngularJS
  *  promises for async opertations.
+ *
+ *  - `$load`: Wraps the native SP.ClientContext#load method
+ *    and returns a promise that resolves with the loaded object 
+ *    when executeQueryAsync resolves
+ *
+ *  - `$executeQueryAsync`: Wraps the native SP.ClientContext#executeQueryAsync
+ *    method and returns a promise that resolves after the query is executed.
  *
  * @example
  * ```js
@@ -152,8 +159,8 @@ angular.module('ExpertsInside.SharePoint.JSOM').factory('$spClientContext', [
     'use strict';
     // var $spClientContextMinErr = angular.$$minErr('$spClientContext');
     var spContext = {
-        create: function () {
-          var ctx = new $window.SP.ClientContext(ShareCoffee.Commons.getAppWebUrl());
+        $$decorateContext: function (ctx) {
+          ctx.$$empowered = true;
           ctx.$$awaitingLoads = [];
           ctx.$load = function () {
             var args = Array.prototype.slice.call(arguments, 0);
@@ -186,6 +193,14 @@ angular.module('ExpertsInside.SharePoint.JSOM').factory('$spClientContext', [
             return deferred.promise;
           };
           return ctx;
+        },
+        create: function (url) {
+          var ctx = new $window.SP.ClientContext(url);
+          return spContext.$$decorateContext(ctx);
+        },
+        current: function () {
+          var ctx = new $window.SP.ClientContext.get_current();
+          return angular.isDefined(ctx.$$empowered) ? ctx : spContext.$$decorateContext(ctx);
         }
       };
     return spContext;
