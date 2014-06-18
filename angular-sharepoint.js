@@ -52,7 +52,7 @@ angular.module('ExpertsInside.SharePoint.Search', ['ExpertsInside.SharePoint.Cor
   '$window',
   '$log',
   function ($window, $log) {
-    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.Search)) {
+    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.QueryProperties)) {
       $log.warn('ExpertsInside.SharePoint.Search module depends on ShareCoffee.Search. ' + 'Please include ShareCoffee.Search.js in your document');
     }
   }
@@ -76,7 +76,7 @@ angular.module('ExpertsInside.SharePoint.User', ['ExpertsInside.SharePoint.Core'
   '$window',
   '$log',
   function ($window, $log) {
-    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.UserProfiles)) {
+    if (angular.isUndefined($window.ShareCoffee) || angular.isUndefined($window.ShareCoffee.UserProfileProperties)) {
       $log.warn('ExpertsInside.SharePoint.User module depends on ShareCoffee.UserProfiles. ' + 'Please include ShareCoffee.UserProfiles.js in your document');
     }
   }
@@ -686,12 +686,13 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
        * @returns {string} JSON representation
        */
       List.toJson = function (item) {
-        var copy = angular.extend({}, item);
-        if (angular.isDefined(item.$$readOnlyFields)) {
-          angular.forEach(item.$$readOnlyFields, function (readOnlyField) {
-            delete copy[readOnlyField];
-          });
-        }
+        var copy = {};
+        var blacklist = angular.extend([], item.$$readOnlyFields);
+        angular.forEach(item, function (value, key) {
+          if (key.indexOf('$') !== 0 && blacklist.indexOf(key) === -1) {
+            copy[key] = value;
+          }
+        });
         return angular.toJson(copy);
       };
       List.prototype = {
