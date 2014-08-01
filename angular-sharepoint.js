@@ -276,9 +276,9 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function (
               queryId: primaryQueryResult.QueryId,
               queryRuleId: primaryQueryResult.QueryRuleId,
               relevantResults: $spConvert.spSimpleDataTable(primaryQueryResult.RelevantResults.Table),
-              customResults: primaryQueryResult.CustomResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.CustomResults.Table) : null,
-              refinementResults: primaryQueryResult.RefinementResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.RefinementResults.Table) : null,
-              specialTermResults: primaryQueryResult.SpecialTermResults !== null ? $spConvert.spSimpleDataTable(primaryQueryResult.SpecialTermResults.Table) : null
+              customResults: primaryQueryResult.CustomResults,
+              refinementResults: primaryQueryResult.RefinementResults,
+              specialTermResults: primaryQueryResult.SpecialTermResults
             }
           };
         return result;
@@ -520,8 +520,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#get
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#get
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Get a single list item by id
        *
@@ -543,8 +543,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#query
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#query
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Query for the list for items
        *
@@ -563,8 +563,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#create
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#create
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Create a new list item on the server.
        *
@@ -586,8 +586,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#update
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#update
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Update an existing list item on the server.
        *
@@ -608,8 +608,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#save
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#save
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Update or create a list item on the server.
        *
@@ -628,8 +628,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#delete
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#delete
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Delete a list item on the server.
        *
@@ -646,16 +646,16 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc object
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#queries
-       * @propertyOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#queries
+       * @propertyOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Object that holds the created named queries
        */
       List.queries = {};
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#addNamedQuery
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#addNamedQuery
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Add a named query to the queries hash
        *
@@ -675,8 +675,8 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       };
       /**
        * @ngdoc method
-       * @name ExpertsInside.SharePoint.List.$spList+ListItem#toJson
-       * @methodOf ExpertsInside.SharePoint.List.$spList+ListItem
+       * @name ExpertsInside.SharePoint.List.$spList#toJson
+       * @methodOf ExpertsInside.SharePoint.List.$spList
        *
        * @description Create a copy of the item, remove read-only fields
        *   and stringify it.
