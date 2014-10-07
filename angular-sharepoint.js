@@ -328,7 +328,7 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function (
  * @param {Object=} listOptions Hash with custom options for this List. The following options are
  *   supported:
  *
- *   - **`readOnlyFields`** - {Array.{string}=} - Array of field names that will be exlcuded
+ *   - **`readOnlyFields`** - {Array.{string}=} - Array of field names that will be excluded
  *   from the request when saving an item back to SharePoint
  *   - **`query`** - {Object=} - Default query parameter used by each action. Can be
  *   overridden per action. Prefixing them with `$` is optional. Valid keys:
@@ -339,6 +339,8 @@ angular.module('ExpertsInside.SharePoint.Core').factory('$spConvert', function (
  *       - **`$skip`**
  *       - **`$expand`**
  *       - **`$sort`**
+ *   - **`inHostWeb`** - {boolean|string} - Set the host web url for the List. When set to
+ *   `true`, ShareCoffe.Commons.getHostWebUrl() will be used. 
  *
  * @return {Object} A dynamically created  class constructor for list items.
  *   See {@link ExpertsInside.SharePoint.List.$spList+ListItem $spList+ListItem} for details.
@@ -407,7 +409,7 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
        * @private
        * Is this List in the host web?
        */
-      List.$$inHostWeb = !!listOptions.inHostWeb;
+      List.$$inHostWeb = listOptions.inHostWeb;
       /**
        * @private
        * Decorate the result with $promise and $resolved
@@ -459,7 +461,9 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
       List.$$buildHttpConfig = function (action, options) {
         var baseUrl = List.$$relativeUrl + '/items';
         var httpConfig = { url: baseUrl };
-        if (List.$$inHostWeb) {
+        if (angular.isString(List.$$inHostWeb)) {
+          httpConfig.hostWebUrl = List.$$inHostWeb;
+        } else if (List.$$inHostWeb) {
           httpConfig.hostWebUrl = ShareCoffee.Commons.getHostWebUrl();
         }
         action = angular.isString(action) ? action.toLowerCase() : '';
@@ -471,10 +475,10 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
             throw $spListMinErr('options:get', 'options must have an id');
           }
           httpConfig.url += '(' + options.id + ')';
-          httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
+          httpConfig = ShareCoffee.REST.build.read['for'].angularJS(httpConfig);
           break;
         case 'query':
-          httpConfig = ShareCoffee.REST.build.read.for.angularJS(httpConfig);
+          httpConfig = ShareCoffee.REST.build.read['for'].angularJS(httpConfig);
           break;
         case 'create':
           if (angular.isUndefined(options.item)) {
@@ -487,7 +491,7 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
             delete query.$expand;
           }
           httpConfig.payload = options.item.$toJson();
-          httpConfig = ShareCoffee.REST.build.create.for.angularJS(httpConfig);
+          httpConfig = ShareCoffee.REST.build.create['for'].angularJS(httpConfig);
           break;
         case 'update':
           if (angular.isUndefined(options.item)) {
@@ -501,7 +505,7 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
           httpConfig.url += '(' + options.item.Id + ')';
           httpConfig.payload = options.item.$toJson();
           httpConfig.eTag = !options.force && angular.isDefined(options.item.__metadata) ? options.item.__metadata.etag : null;
-          httpConfig = ShareCoffee.REST.build.update.for.angularJS(httpConfig);
+          httpConfig = ShareCoffee.REST.build.update['for'].angularJS(httpConfig);
           break;
         case 'delete':
           if (angular.isUndefined(options.item)) {
@@ -511,7 +515,7 @@ angular.module('ExpertsInside.SharePoint.List').factory('$spList', [
             throw $spListMinErr('options:delete', 'options.item must have __metadata');
           }
           httpConfig.url += '(' + options.item.Id + ')';
-          httpConfig = ShareCoffee.REST.build.delete.for.angularJS(httpConfig);
+          httpConfig = ShareCoffee.REST.build['delete']['for'].angularJS(httpConfig);
           break;
         }
         httpConfig.url = $spRest.appendQueryParameters(httpConfig.url, query);
@@ -954,7 +958,7 @@ angular.module('ExpertsInside.SharePoint.Search').factory('$spSearch', [
           var searchType = properties.searchType;
           delete properties.searchType;
           var queryProperties = search.$$createQueryProperties(searchType, properties);
-          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(queryProperties);
+          var httpConfig = ShareCoffee.REST.build.read['for'].angularJS(queryProperties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
           return search.$decorateResult(result, httpConfig);
@@ -1008,14 +1012,14 @@ angular.module('ExpertsInside.SharePoint.User').factory('$spUser', [
         },
         current: function () {
           var properties = new ShareCoffee.UserProfileProperties(ShareCoffee.Url.GetMyProperties);
-          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
+          var httpConfig = ShareCoffee.REST.build.read.f.angularJS(properties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
           return $spUser.$$decorateResult(result, httpConfig);
         },
         get: function (accountName) {
           var properties = new ShareCoffee.UserProfileProperties(ShareCoffee.Url.GetProperties, accountName);
-          var httpConfig = ShareCoffee.REST.build.read.for.angularJS(properties);
+          var httpConfig = ShareCoffee.REST.build.read.f.angularJS(properties);
           httpConfig.transformResponse = $spRest.transformResponse;
           var result = {};
           return $spUser.$$decorateResult(result, httpConfig);
